@@ -1,0 +1,8 @@
+run = "chmod +x gradlew && ./gradlew assembleDebug"
+language = "bash"
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["sh", "-c", "chmod +x gradlew && ./gradlew assembleDebug"]
