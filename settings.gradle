@@ -1,0 +1,2 @@
+rootProject.name = "Voice Command"
+include ':app'

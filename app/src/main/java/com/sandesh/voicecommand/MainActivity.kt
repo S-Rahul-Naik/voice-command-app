@@ -1,0 +1,286 @@
+package com.sandesh.voicecommand
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var startButton: Button
+    private lateinit var stopButton: Button
+    private lateinit var transcriptText: TextView
+    private lateinit var statusText: TextView
+    
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var isListening = false
+    
+    private val PERMISSION_REQUEST_CODE = 100
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        
+        startButton = findViewById(R.id.startButton)
+        stopButton = findViewById(R.id.stopButton)
+        transcriptText = findViewById(R.id.transcriptText)
+        statusText = findViewById(R.id.statusText)
+        
+        stopButton.isEnabled = false
+        
+        startButton.setOnClickListener {
+            if (checkPermission()) {
+                startListening()
+            } else {
+                requestPermission()
+            }
+        }
+        
+        stopButton.setOnClickListener {
+            stopListening()
+        }
+        
+        initializeSpeechRecognizer()
+    }
+    
+    private fun checkPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+    
+    private fun requestPermission() {
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.RECORD_AUDIO),
+            PERMISSION_REQUEST_CODE
+        )
+    }
+    
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startListening()
+            } else {
+                Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun initializeSpeechRecognizer() {
+        if (SpeechRecognizer.isRecognitionAvailable(this)) {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    statusText.text = "🎤 Listening..."
+                }
+                
+                override fun onBeginningOfSpeech() {
+                    statusText.text = "🎤 Speaking..."
+                }
+                
+                override fun onRmsChanged(rmsdB: Float) {}
+                
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                
+                override fun onEndOfSpeech() {
+                    statusText.text = "Processing..."
+                }
+                
+                override fun onError(error: Int) {
+                    statusText.text = "❌ Error: ${getErrorText(error)}"
+                    stopListening()
+                }
+                
+                override fun onResults(results: Bundle?) {
+                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    if (!matches.isNullOrEmpty()) {
+                        val text = matches[0]
+                        transcriptText.text = text
+                        handleCommand(text)
+                    }
+                    stopListening()
+                }
+                
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    if (!matches.isNullOrEmpty()) {
+                        transcriptText.text = matches[0] + "..."
+                    }
+                }
+                
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+        } else {
+            Toast.makeText(this, "Speech recognition not available", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun startListening() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        
+        speechRecognizer?.startListening(intent)
+        isListening = true
+        startButton.isEnabled = false
+        stopButton.isEnabled = true
+        statusText.text = "🎤 Starting..."
+        transcriptText.text = ""
+    }
+    
+    private fun stopListening() {
+        speechRecognizer?.stopListening()
+        isListening = false
+        startButton.isEnabled = true
+        stopButton.isEnabled = false
+        statusText.text = "Idle"
+    }
+    
+    private fun handleCommand(text: String) {
+        val lowerText = text.lowercase()
+        
+        // Pattern: "open <app>"
+        if (lowerText.startsWith("open ")) {
+            val appName = lowerText.removePrefix("open ").trim()
+            openApp(appName)
+            return
+        }
+        
+        // Pattern: "play <song>"
+        if (lowerText.startsWith("play ")) {
+            val query = lowerText.removePrefix("play ").trim()
+            openYouTubeSearch(query)
+            return
+        }
+        
+        // Pattern: "call <name>"
+        if (lowerText.startsWith("call ")) {
+            val contact = lowerText.removePrefix("call ").trim()
+            openDialer(contact)
+            return
+        }
+        
+        statusText.text = "✅ Recognized: $text"
+    }
+    
+    private fun openApp(appName: String) {
+        val packageName = getPackageName(appName)
+        
+        if (packageName != null) {
+            try {
+                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                if (launchIntent != null) {
+                    startActivity(launchIntent)
+                    statusText.text = "✅ Opened $appName"
+                } else {
+                    statusText.text = "❌ $appName not installed"
+                    openPlayStore(packageName)
+                }
+            } catch (e: Exception) {
+                statusText.text = "❌ Failed to open $appName"
+            }
+        } else {
+            statusText.text = "❌ Unknown app: $appName"
+        }
+    }
+    
+    private fun getPackageName(appName: String): String? {
+        return when (appName.lowercase()) {
+            "youtube" -> "com.google.android.youtube"
+            "gmail" -> "com.google.android.gm"
+            "maps", "google maps" -> "com.google.android.apps.maps"
+            "chrome" -> "com.android.chrome"
+            "whatsapp" -> "com.whatsapp"
+            "instagram" -> "com.instagram.android"
+            "twitter" -> "com.twitter.android"
+            "facebook" -> "com.facebook.katana"
+            "spotify" -> "com.spotify.music"
+            "telegram" -> "org.telegram.messenger"
+            "camera" -> "com.android.camera2"
+            "gallery", "photos" -> "com.google.android.apps.photos"
+            "calculator" -> "com.google.android.calculator"
+            "clock" -> "com.google.android.deskclock"
+            "calendar" -> "com.google.android.calendar"
+            "contacts" -> "com.google.android.contacts"
+            "phone", "dialer" -> "com.google.android.dialer"
+            "messages" -> "com.google.android.apps.messaging"
+            "settings" -> "com.android.settings"
+            else -> null
+        }
+    }
+    
+    private fun openPlayStore(packageName: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = android.net.Uri.parse("market://details?id=$packageName")
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            // Fallback to web
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = android.net.Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+            }
+            startActivity(intent)
+        }
+    }
+    
+    private fun openYouTubeSearch(query: String) {
+        try {
+            val intent = Intent(Intent.ACTION_SEARCH).apply {
+                setPackage("com.google.android.youtube")
+                putExtra("query", query)
+            }
+            startActivity(intent)
+            statusText.text = "✅ Searching YouTube: $query"
+        } catch (e: Exception) {
+            statusText.text = "❌ YouTube not installed"
+        }
+    }
+    
+    private fun openDialer(contact: String) {
+        val intent = Intent(Intent.ACTION_DIAL).apply {
+            data = android.net.Uri.parse("tel:")
+        }
+        startActivity(intent)
+        statusText.text = "✅ Opening dialer"
+    }
+    
+    private fun getErrorText(error: Int): String {
+        return when (error) {
+            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
+            SpeechRecognizer.ERROR_CLIENT -> "Client error"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Insufficient permissions"
+            SpeechRecognizer.ERROR_NETWORK -> "Network error"
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
+            SpeechRecognizer.ERROR_NO_MATCH -> "No match found"
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognition service busy"
+            SpeechRecognizer.ERROR_SERVER -> "Server error"
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
+            else -> "Unknown error"
+        }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        speechRecognizer?.destroy()
+    }
+}
