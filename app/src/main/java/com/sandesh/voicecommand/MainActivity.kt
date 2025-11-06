@@ -286,11 +286,11 @@ class MainActivity : AppCompatActivity() {
         
         // WiFi controls
         when {
-            lowerText.contains("turn on") && lowerText.contains("wifi") -> {
+            lowerText.contains("turn on") && (lowerText.contains("wifi") || lowerText.contains("wi-fi") || lowerText.contains("wi fi")) -> {
                 toggleWifi(true)
                 return
             }
-            lowerText.contains("turn off") && lowerText.contains("wifi") -> {
+            lowerText.contains("turn off") && (lowerText.contains("wifi") || lowerText.contains("wi-fi") || lowerText.contains("wi fi")) -> {
                 toggleWifi(false)
                 return
             }
@@ -320,6 +320,34 @@ class MainActivity : AppCompatActivity() {
             }
             lowerText.contains("mute") -> {
                 muteVolume()
+                return
+            }
+        }
+        
+        // Brightness controls
+        when {
+            lowerText.contains("increase brightness") || lowerText.contains("brightness up") || (lowerText.contains("turn up") && lowerText.contains("brightness")) -> {
+                adjustBrightness(true)
+                return
+            }
+            lowerText.contains("decrease brightness") || lowerText.contains("brightness down") || (lowerText.contains("turn down") && lowerText.contains("brightness")) -> {
+                adjustBrightness(false)
+                return
+            }
+        }
+        
+        // Airplane mode
+        when {
+            lowerText.contains("turn on") && (lowerText.contains("airplane") || lowerText.contains("flight")) -> {
+                toggleAirplaneMode()
+                return
+            }
+            lowerText.contains("turn off") && (lowerText.contains("airplane") || lowerText.contains("flight")) -> {
+                toggleAirplaneMode()
+                return
+            }
+            lowerText.contains("airplane mode") || lowerText.contains("flight mode") -> {
+                toggleAirplaneMode()
                 return
             }
         }
@@ -475,23 +503,6 @@ class MainActivity : AppCompatActivity() {
         // News
         if (lowerText.contains("what's the news") || lowerText.contains("news today") || lowerText.contains("latest news")) {
             openNews()
-            return
-        }
-        
-        // Brightness
-        if (lowerText.contains("increase brightness") || lowerText.contains("brightness up")) {
-            adjustBrightness(true)
-            return
-        }
-        
-        if (lowerText.contains("decrease brightness") || lowerText.contains("brightness down")) {
-            adjustBrightness(false)
-            return
-        }
-        
-        // Airplane mode
-        if (lowerText.contains("airplane mode") || lowerText.contains("flight mode")) {
-            toggleAirplaneMode()
             return
         }
         
