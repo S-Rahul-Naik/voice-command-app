@@ -751,24 +751,17 @@ class MainActivity : AppCompatActivity() {
     
     private fun searchGoogle(query: String) {
         try {
-            val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
-                putExtra(android.app.SearchManager.QUERY, query)
+            // Use browser URL for reliable search - works on all devices
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://www.google.com/search?q=${Uri.encode(query)}")
             }
             startActivity(intent)
             statusText.text = "✅ Searching for: $query"
             Toast.makeText(this, "Searching Google for: $query", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            // Fallback to browser
-            try {
-                val browserIntent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse("https://www.google.com/search?q=${Uri.encode(query)}")
-                }
-                startActivity(browserIntent)
-                statusText.text = "✅ Searching for: $query"
-            } catch (e2: Exception) {
-                statusText.text = "❌ Search failed"
-                Toast.makeText(this, "Failed to search: ${e2.message}", Toast.LENGTH_SHORT).show()
-            }
+            statusText.text = "❌ Search failed: ${e.message}"
+            Toast.makeText(this, "Failed to search: ${e.message}", Toast.LENGTH_SHORT).show()
+            android.util.Log.e("VoiceCommand", "Search error", e)
         }
     }
     
