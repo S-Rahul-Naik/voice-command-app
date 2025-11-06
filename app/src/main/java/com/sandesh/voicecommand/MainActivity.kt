@@ -208,42 +208,40 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun openApp(appName: String) {
-        val packageName = getPackageName(appName)
-        
-        if (packageName != null) {
-            try {
-                // Check if app is installed first
-                val isInstalled = try {
-                    packageManager.getPackageInfo(packageName, 0)
-                    true
-                } catch (e: Exception) {
-                    false
-                }
+        try {
+            // Get all installed apps
+            val intent = Intent(Intent.ACTION_MAIN, null)
+            intent.addCategory(Intent.CATEGORY_LAUNCHER)
+            val allApps = packageManager.queryIntentActivities(intent, 0)
+            
+            // Search for app by name (case-insensitive)
+            val searchName = appName.lowercase().trim()
+            
+            for (appInfo in allApps) {
+                val appLabel = appInfo.loadLabel(packageManager).toString().lowercase()
                 
-                if (!isInstalled) {
-                    statusText.text = "❌ $appName not installed"
-                    Toast.makeText(this, "$appName is not installed on this device", Toast.LENGTH_SHORT).show()
-                    return
+                // Check if app name matches
+                if (appLabel.contains(searchName) || searchName.contains(appLabel)) {
+                    val packageName = appInfo.activityInfo.packageName
+                    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                    
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(launchIntent)
+                        statusText.text = "✅ Opened $appLabel"
+                        Toast.makeText(this, "Opening $appLabel", Toast.LENGTH_SHORT).show()
+                        return
+                    }
                 }
-                
-                // App is installed, get launch intent
-                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(launchIntent)
-                    statusText.text = "✅ Opened $appName"
-                    Toast.makeText(this, "Opening $appName directly", Toast.LENGTH_SHORT).show()
-                } else {
-                    // App exists but no launch activity - try alternative method
-                    statusText.text = "⚠️ $appName has no launcher"
-                    Toast.makeText(this, "$appName exists but cannot be launched", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                statusText.text = "❌ Error: ${e.message}"
-                Toast.makeText(this, "Failed to open $appName: ${e.message}", Toast.LENGTH_LONG).show()
             }
-        } else {
-            statusText.text = "❌ Unknown app: $appName"
+            
+            // App not found
+            statusText.text = "❌ $appName not found"
+            Toast.makeText(this, "$appName is not installed on this device", Toast.LENGTH_SHORT).show()
+            
+        } catch (e: Exception) {
+            statusText.text = "❌ Error: ${e.message}"
+            Toast.makeText(this, "Error opening app: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
     
