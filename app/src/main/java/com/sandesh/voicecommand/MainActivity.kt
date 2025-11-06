@@ -1164,36 +1164,57 @@ class MainActivity : AppCompatActivity() {
     
     private fun navigateTo(destination: String) {
         try {
+            // Try Google Maps app first
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("google.navigation:q=$destination")
+                data = Uri.parse("google.navigation:q=${Uri.encode(destination)}")
                 setPackage("com.google.android.apps.maps")
             }
-            startActivity(intent)
-            statusText.text = "✅ Navigating to $destination"
-            Toast.makeText(this, "Opening navigation", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            // Fallback to browser
-            val browserIntent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode(destination)}")
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Navigating to $destination"
+                Toast.makeText(this, "Starting navigation to $destination", Toast.LENGTH_SHORT).show()
+            } else {
+                // Fallback: Open in browser or any maps app
+                val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=${Uri.encode(destination)}")
+                }
+                startActivity(browserIntent)
+                statusText.text = "✅ Opening maps for $destination"
+                Toast.makeText(this, "Google Maps not found. Opening browser.", Toast.LENGTH_SHORT).show()
             }
-            startActivity(browserIntent)
+        } catch (e: Exception) {
+            statusText.text = "❌ Navigation error: ${e.message}"
+            Toast.makeText(this, "Failed to navigate: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "Navigation error", e)
         }
     }
     
     private fun searchNearby(query: String) {
         try {
+            // Try Google Maps app first
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("geo:0,0?q=$query")
+                data = Uri.parse("geo:0,0?q=${Uri.encode(query)}")
                 setPackage("com.google.android.apps.maps")
             }
-            startActivity(intent)
-            statusText.text = "✅ Searching: $query"
-            Toast.makeText(this, "Searching nearby", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            val browserIntent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode(query)}")
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Searching: $query"
+                Toast.makeText(this, "Searching for $query nearby", Toast.LENGTH_SHORT).show()
+            } else {
+                // Fallback: Open in browser
+                val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode(query)}")
+                }
+                startActivity(browserIntent)
+                statusText.text = "✅ Searching: $query"
+                Toast.makeText(this, "Opening maps in browser", Toast.LENGTH_SHORT).show()
             }
-            startActivity(browserIntent)
+        } catch (e: Exception) {
+            statusText.text = "❌ Search error: ${e.message}"
+            Toast.makeText(this, "Failed to search: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "Search error", e)
         }
     }
     
@@ -1202,11 +1223,19 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 data = Uri.parse("https://www.google.com/search?q=weather")
             }
-            startActivity(intent)
-            statusText.text = "✅ Checking weather"
-            Toast.makeText(this, "Opening weather", Toast.LENGTH_SHORT).show()
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Checking weather"
+                Toast.makeText(this, "Opening weather forecast", Toast.LENGTH_SHORT).show()
+            } else {
+                statusText.text = "❌ No browser found"
+                Toast.makeText(this, "No browser app installed", Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
-            statusText.text = "❌ Weather error"
+            statusText.text = "❌ Weather error: ${e.message}"
+            Toast.makeText(this, "Failed to check weather: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "Weather error", e)
         }
     }
     
