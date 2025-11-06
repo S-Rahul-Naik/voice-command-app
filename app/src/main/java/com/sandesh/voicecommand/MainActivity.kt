@@ -1,6 +1,8 @@
 package com.sandesh.voicecommand
 
 import android.Manifest
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.content.Intent
@@ -12,17 +14,22 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.AlarmClock
+import android.provider.CalendarContract
 import android.provider.ContactsContract
+import android.provider.MediaStore
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.telephony.SmsManager
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
@@ -93,8 +100,21 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.CAMERA,
             Manifest.permission.ACCESS_NETWORK_STATE,
             Manifest.permission.ACCESS_WIFI_STATE,
-            Manifest.permission.CHANGE_WIFI_STATE
+            Manifest.permission.CHANGE_WIFI_STATE,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.READ_CALENDAR,
+            Manifest.permission.WRITE_CALENDAR,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_SMS
         )
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
         
         // Add Bluetooth permissions based on Android version
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -363,6 +383,129 @@ class MainActivity : AppCompatActivity() {
                 statusText.text = "❌ Say: whatsapp [name] [message]"
                 Toast.makeText(this, "Format: whatsapp [contact name] [message]", Toast.LENGTH_LONG).show()
             }
+            return
+        }
+        
+        // Pattern: "send a text to <contact> <message>" or "text <contact> <message>"
+        if (lowerText.startsWith("send a text to ") || lowerText.startsWith("send text to ")) {
+            val remainder = lowerText.removePrefix("send a text to ").removePrefix("send text to ").trim()
+            val parts = remainder.split(" ", limit = 2)
+            if (parts.size >= 2) {
+                val contact = parts[0]
+                val message = parts[1]
+                sendSMS(contact, message)
+            }
+            return
+        }
+        
+        if (lowerText.startsWith("text ")) {
+            val remainder = lowerText.removePrefix("text ").trim()
+            val parts = remainder.split(" ", limit = 2)
+            if (parts.size >= 2) {
+                val contact = parts[0]
+                val message = parts[1]
+                sendSMS(contact, message)
+            }
+            return
+        }
+        
+        // Alarms & Timers
+        if (lowerText.contains("set an alarm") || lowerText.contains("set alarm")) {
+            setAlarm(lowerText)
+            return
+        }
+        
+        if (lowerText.contains("set a timer") || lowerText.contains("set timer")) {
+            setTimer(lowerText)
+            return
+        }
+        
+        // Calendar & Reminders
+        if (lowerText.contains("set a reminder") || lowerText.contains("set reminder") || lowerText.contains("remind me")) {
+            setReminder(lowerText)
+            return
+        }
+        
+        if (lowerText.contains("add") && lowerText.contains("calendar")) {
+            addCalendarEvent(lowerText)
+            return
+        }
+        
+        if (lowerText.contains("what's my schedule") || lowerText.contains("my schedule")) {
+            openCalendar()
+            return
+        }
+        
+        // Navigation
+        if (lowerText.contains("navigate to") || lowerText.contains("directions to")) {
+            val destination = lowerText.replace("navigate to", "").replace("directions to", "").trim()
+            navigateTo(destination)
+            return
+        }
+        
+        if (lowerText.contains("show me") && (lowerText.contains("restaurant") || lowerText.contains("hospital") || lowerText.contains("nearby"))) {
+            val query = lowerText.replace("show me", "").trim()
+            searchNearby(query)
+            return
+        }
+        
+        // Weather
+        if (lowerText.contains("what's the weather") || lowerText.contains("weather")) {
+            checkWeather()
+            return
+        }
+        
+        // Camera & Photos
+        if (lowerText.contains("take a photo") || lowerText.contains("take a picture") || lowerText.contains("take a selfie")) {
+            val isSelfie = lowerText.contains("selfie")
+            takePhoto(isSelfie)
+            return
+        }
+        
+        if (lowerText.contains("take a screenshot") || lowerText.contains("screenshot")) {
+            takeScreenshot()
+            return
+        }
+        
+        if (lowerText.contains("show me photos") || lowerText.contains("open gallery")) {
+            openGallery()
+            return
+        }
+        
+        // News
+        if (lowerText.contains("what's the news") || lowerText.contains("news today") || lowerText.contains("latest news")) {
+            openNews()
+            return
+        }
+        
+        // Brightness
+        if (lowerText.contains("increase brightness") || lowerText.contains("brightness up")) {
+            adjustBrightness(true)
+            return
+        }
+        
+        if (lowerText.contains("decrease brightness") || lowerText.contains("brightness down")) {
+            adjustBrightness(false)
+            return
+        }
+        
+        // Airplane mode
+        if (lowerText.contains("airplane mode") || lowerText.contains("flight mode")) {
+            toggleAirplaneMode()
+            return
+        }
+        
+        // Translation
+        if (lowerText.contains("translate")) {
+            handleTranslation(lowerText)
+            return
+        }
+        
+        // Math calculations
+        if (lowerText.contains("what's") && (lowerText.contains("%") || lowerText.contains("percent") || lowerText.contains("of"))) {
+            calculatePercentage(lowerText)
+            return
+        }
             return
         }
         
@@ -750,6 +893,252 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             statusText.text = "❌ Mute error"
             Toast.makeText(this, "Failed to mute", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun sendSMS(contactName: String, message: String) {
+        try {
+            val phoneNumber = findContactPhoneNumber(contactName)
+            if (phoneNumber != null) {
+                val smsManager = SmsManager.getDefault()
+                smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+                statusText.text = "✅ SMS sent to $contactName"
+                Toast.makeText(this, "Message sent to $contactName", Toast.LENGTH_SHORT).show()
+            } else {
+                statusText.text = "❌ Contact not found"
+                Toast.makeText(this, "Contact $contactName not found", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            statusText.text = "❌ SMS failed"
+            Toast.makeText(this, "Failed to send SMS: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    private fun setAlarm(command: String) {
+        try {
+            val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+            }
+            startActivity(intent)
+            statusText.text = "✅ Opening alarms"
+            Toast.makeText(this, "Set your alarm", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Alarm error"
+            Toast.makeText(this, "Failed to open alarm", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun setTimer(command: String) {
+        try {
+            val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+            }
+            startActivity(intent)
+            statusText.text = "✅ Opening timer"
+            Toast.makeText(this, "Set your timer", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Timer error"
+            Toast.makeText(this, "Failed to open timer", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun setReminder(command: String) {
+        try {
+            val intent = Intent(Intent.ACTION_INSERT).apply {
+                data = CalendarContract.Events.CONTENT_URI
+            }
+            startActivity(intent)
+            statusText.text = "✅ Creating reminder"
+            Toast.makeText(this, "Add your reminder", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Reminder error"
+            Toast.makeText(this, "Failed to create reminder", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun addCalendarEvent(command: String) {
+        try {
+            val intent = Intent(Intent.ACTION_INSERT).apply {
+                data = CalendarContract.Events.CONTENT_URI
+            }
+            startActivity(intent)
+            statusText.text = "✅ Adding to calendar"
+            Toast.makeText(this, "Add your event", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Calendar error"
+            Toast.makeText(this, "Failed to open calendar", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun openCalendar() {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("content://com.android.calendar/time")
+            }
+            startActivity(intent)
+            statusText.text = "✅ Opening calendar"
+        } catch (e: Exception) {
+            // Fallback
+            val intent = packageManager.getLaunchIntentForPackage("com.google.android.calendar")
+            if (intent != null) {
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "Calendar not found", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun navigateTo(destination: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("google.navigation:q=$destination")
+                setPackage("com.google.android.apps.maps")
+            }
+            startActivity(intent)
+            statusText.text = "✅ Navigating to $destination"
+            Toast.makeText(this, "Opening navigation", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            // Fallback to browser
+            val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode(destination)}")
+            }
+            startActivity(browserIntent)
+        }
+    }
+    
+    private fun searchNearby(query: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("geo:0,0?q=$query")
+                setPackage("com.google.android.apps.maps")
+            }
+            startActivity(intent)
+            statusText.text = "✅ Searching: $query"
+            Toast.makeText(this, "Searching nearby", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode(query)}")
+            }
+            startActivity(browserIntent)
+        }
+    }
+    
+    private fun checkWeather() {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://www.google.com/search?q=weather")
+            }
+            startActivity(intent)
+            statusText.text = "✅ Checking weather"
+            Toast.makeText(this, "Opening weather", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Weather error"
+        }
+    }
+    
+    private fun takePhoto(isSelfie: Boolean) {
+        try {
+            val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            if (isSelfie) {
+                intent.putExtra("android.intent.extras.CAMERA_FACING", 1)
+            }
+            startActivity(intent)
+            statusText.text = if (isSelfie) "✅ Opening selfie camera" else "✅ Opening camera"
+            Toast.makeText(this, "Take your photo", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Camera error"
+            Toast.makeText(this, "Failed to open camera", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun takeScreenshot() {
+        Toast.makeText(this, "Press Power + Volume Down to take screenshot", Toast.LENGTH_LONG).show()
+        statusText.text = "💡 Use Power + Volume Down"
+    }
+    
+    private fun openGallery() {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                type = "image/*"
+            }
+            startActivity(intent)
+            statusText.text = "✅ Opening gallery"
+        } catch (e: Exception) {
+            statusText.text = "❌ Gallery error"
+        }
+    }
+    
+    private fun openNews() {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://news.google.com")
+            }
+            startActivity(intent)
+            statusText.text = "✅ Opening news"
+            Toast.makeText(this, "Latest news", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ News error"
+        }
+    }
+    
+    private fun adjustBrightness(increase: Boolean) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!Settings.System.canWrite(this)) {
+                    val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                    Toast.makeText(this, "Grant permission to change brightness", Toast.LENGTH_LONG).show()
+                    return
+                }
+            }
+            
+            Toast.makeText(this, "Use volume buttons to adjust brightness in settings", Toast.LENGTH_LONG).show()
+            val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS)
+            startActivity(intent)
+            statusText.text = "Opening display settings"
+        } catch (e: Exception) {
+            statusText.text = "❌ Brightness error"
+        }
+    }
+    
+    private fun toggleAirplaneMode() {
+        try {
+            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+            startActivity(intent)
+            statusText.text = "Opening airplane mode settings"
+            Toast.makeText(this, "Toggle airplane mode manually", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Airplane mode error"
+        }
+    }
+    
+    private fun handleTranslation(command: String) {
+        try {
+            val query = command.replace("translate", "").trim()
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://translate.google.com/?sl=auto&tl=en&text=${Uri.encode(query)}")
+            }
+            startActivity(intent)
+            statusText.text = "✅ Translating"
+            Toast.makeText(this, "Opening Google Translate", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Translation error"
+        }
+    }
+    
+    private fun calculatePercentage(command: String) {
+        try {
+            val query = command.replace("what's", "").replace("what is", "").trim()
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://www.google.com/search?q=${Uri.encode(query)}")
+            }
+            startActivity(intent)
+            statusText.text = "✅ Calculating"
+            Toast.makeText(this, "Showing result", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Calculation error"
         }
     }
     
