@@ -918,19 +918,37 @@ class MainActivity : AppCompatActivity() {
     
     private fun sendSMS(contactName: String, message: String) {
         try {
+            // Check for SMS permission
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+                statusText.text = "❌ SMS permission not granted"
+                Toast.makeText(this, "Please grant SMS permission in app settings", Toast.LENGTH_LONG).show()
+                
+                // Request permission
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.SEND_SMS), PERMISSION_REQUEST_CODE)
+                return
+            }
+            
+            // Check for contacts permission
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+                statusText.text = "❌ Contacts permission not granted"
+                Toast.makeText(this, "Please grant Contacts permission", Toast.LENGTH_LONG).show()
+                return
+            }
+            
             val phoneNumber = findContactPhoneNumber(contactName)
             if (phoneNumber != null) {
                 val smsManager = SmsManager.getDefault()
                 smsManager.sendTextMessage(phoneNumber, null, message, null, null)
                 statusText.text = "✅ SMS sent to $contactName"
-                Toast.makeText(this, "Message sent to $contactName", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Message sent to $contactName: $message", Toast.LENGTH_SHORT).show()
             } else {
-                statusText.text = "❌ Contact not found"
-                Toast.makeText(this, "Contact $contactName not found", Toast.LENGTH_SHORT).show()
+                statusText.text = "❌ Contact not found: $contactName"
+                Toast.makeText(this, "No contact found with name: $contactName", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
-            statusText.text = "❌ SMS failed"
+            statusText.text = "❌ SMS failed: ${e.message}"
             Toast.makeText(this, "Failed to send SMS: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "SMS error", e)
         }
     }
     
@@ -1251,12 +1269,36 @@ class MainActivity : AppCompatActivity() {
     
     private fun toggleAirplaneMode() {
         try {
-            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
-            startActivity(intent)
-            statusText.text = "Opening airplane mode settings"
-            Toast.makeText(this, "Toggle airplane mode manually", Toast.LENGTH_SHORT).show()
+            // On Android, we can't programmatically toggle airplane mode due to security restrictions
+            // We need to open the settings for the user to toggle it manually
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+                // Try to read current airplane mode state
+                val isAirplaneModeOn = Settings.Global.getInt(
+                    contentResolver,
+                    Settings.Global.AIRPLANE_MODE_ON, 0
+                ) != 0
+                
+                statusText.text = if (isAirplaneModeOn) {
+                    "ℹ️ Airplane mode is currently ON"
+                } else {
+                    "ℹ️ Airplane mode is currently OFF"
+                }
+                
+                // Open airplane mode settings
+                val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+                startActivity(intent)
+                Toast.makeText(this, "Please toggle airplane mode manually.\nCurrent state: ${if (isAirplaneModeOn) "ON" else "OFF"}", Toast.LENGTH_LONG).show()
+            } else {
+                val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+                startActivity(intent)
+                statusText.text = "Opening airplane mode settings"
+                Toast.makeText(this, "Toggle airplane mode manually", Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
-            statusText.text = "❌ Airplane mode error"
+            statusText.text = "❌ Airplane mode error: ${e.message}"
+            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "Airplane mode error", e)
         }
     }
     
