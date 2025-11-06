@@ -217,12 +217,22 @@ class MainActivity : AppCompatActivity() {
             // Search for app by name (case-insensitive)
             val searchName = appName.lowercase().trim()
             
+            // Log all apps for debugging
+            android.util.Log.d("VoiceCommand", "Searching for: $searchName")
+            android.util.Log.d("VoiceCommand", "Total launcher apps: ${allApps.size}")
+            
+            val matchedApps = mutableListOf<String>()
+            
             for (appInfo in allApps) {
                 val appLabel = appInfo.loadLabel(packageManager).toString().lowercase()
                 
                 // Check if app name matches
                 if (appLabel.contains(searchName) || searchName.contains(appLabel)) {
+                    matchedApps.add(appLabel)
                     val packageName = appInfo.activityInfo.packageName
+                    
+                    android.util.Log.d("VoiceCommand", "Found match: $appLabel ($packageName)")
+                    
                     val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
                     
                     if (launchIntent != null) {
@@ -235,13 +245,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             
-            // App not found
-            statusText.text = "❌ $appName not found"
-            Toast.makeText(this, "$appName is not installed on this device", Toast.LENGTH_SHORT).show()
+            // App not found - show matched apps if any
+            if (matchedApps.isNotEmpty()) {
+                val matchList = matchedApps.joinToString(", ")
+                statusText.text = "❌ Found but can't launch: $matchList"
+                Toast.makeText(this, "Found apps: $matchList but couldn't launch them", Toast.LENGTH_LONG).show()
+            } else {
+                statusText.text = "❌ $appName not found"
+                Toast.makeText(this, "$appName is not installed on this device", Toast.LENGTH_SHORT).show()
+            }
             
         } catch (e: Exception) {
             statusText.text = "❌ Error: ${e.message}"
             Toast.makeText(this, "Error opening app: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "Error opening app", e)
         }
     }
     
