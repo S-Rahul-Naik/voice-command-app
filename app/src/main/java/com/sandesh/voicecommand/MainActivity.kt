@@ -49,6 +49,12 @@ class MainActivity : AppCompatActivity() {
             stopListening()
         }
         
+        // Debug: Long press status text to see installed apps
+        statusText.setOnLongClickListener {
+            showInstalledApps()
+            true
+        }
+        
         initializeSpeechRecognizer()
     }
     
@@ -132,6 +138,11 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun startListening() {
+        // Recreate speech recognizer if needed
+        if (speechRecognizer == null) {
+            initializeSpeechRecognizer()
+        }
+        
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
@@ -139,20 +150,34 @@ class MainActivity : AppCompatActivity() {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
         
-        speechRecognizer?.startListening(intent)
-        isListening = true
-        startButton.isEnabled = false
-        stopButton.isEnabled = true
-        statusText.text = "🎤 Starting..."
-        transcriptText.text = ""
+        try {
+            speechRecognizer?.startListening(intent)
+            isListening = true
+            startButton.isEnabled = false
+            stopButton.isEnabled = true
+            statusText.text = "🎤 Starting..."
+            transcriptText.text = ""
+        } catch (e: Exception) {
+            statusText.text = "❌ Failed to start: ${e.message}"
+            Toast.makeText(this, "Error starting speech recognition", Toast.LENGTH_SHORT).show()
+            stopListening()
+        }
     }
     
     private fun stopListening() {
-        speechRecognizer?.stopListening()
+        try {
+            speechRecognizer?.stopListening()
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+        } catch (e: Exception) {
+            android.util.Log.e("VoiceCommand", "Error stopping recognizer", e)
+        }
         isListening = false
         startButton.isEnabled = true
         stopButton.isEnabled = false
-        statusText.text = "Idle"
+        if (statusText.text == "🎤 Listening..." || statusText.text == "🎤 Speaking..." || statusText.text == "🎤 Starting...") {
+            statusText.text = "Idle"
+        }
     }
     
     private fun handleCommand(text: String) {
@@ -227,10 +252,10 @@ class MainActivity : AppCompatActivity() {
             "youtube" -> "com.google.android.youtube"
             "gmail" -> "com.google.android.gm"
             "maps", "google maps" -> "com.google.android.apps.maps"
-            "chrome" -> "com.android.chrome"
+            "chrome", "google chrome" -> "com.google.android.chrome"
             "whatsapp" -> "com.whatsapp"
             "instagram" -> "com.instagram.android"
-            "twitter" -> "com.twitter.android"
+            "twitter", "x" -> "com.twitter.android"
             "facebook" -> "com.facebook.katana"
             "spotify" -> "com.spotify.music"
             "telegram" -> "org.telegram.messenger"
@@ -241,10 +266,40 @@ class MainActivity : AppCompatActivity() {
             "calendar" -> "com.google.android.calendar"
             "contacts" -> "com.google.android.contacts"
             "phone", "dialer" -> "com.google.android.dialer"
-            "messages" -> "com.google.android.apps.messaging"
+            "messages", "messaging" -> "com.google.android.apps.messaging"
             "settings" -> "com.android.settings"
+            "play store", "playstore" -> "com.android.vending"
             else -> null
         }
+    }
+    
+    // Add helper method to list installed apps for debugging
+    private fun debugListInstalledApps() {
+        val apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+        val googleApps = apps.filter { it.packageName.contains("google") || it.packageName.contains("youtube") }
+        val appList = googleApps.joinToString("\n") { "${it.loadLabel(packageManager)}: ${it.packageName}" }
+        android.util.Log.d("VoiceCommand", "Installed Google apps:\n$appList")
+    }
+    
+    private fun showInstalledApps() {
+        val apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            .filter { 
+                val packageName = it.packageName
+                packageName.contains("youtube", ignoreCase = true) ||
+                packageName.contains("whatsapp", ignoreCase = true) ||
+                packageName.contains("instagram", ignoreCase = true) ||
+                packageName.contains("chrome", ignoreCase = true) ||
+                packageName.contains("gmail", ignoreCase = true) ||
+                packageName.contains("maps", ignoreCase = true)
+            }
+            .map { "${it.loadLabel(packageManager)}\n${it.packageName}" }
+            .joinToString("\n\n")
+        
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Installed Apps (Debug)")
+            .setMessage(if (apps.isEmpty()) "No matching apps found" else apps)
+            .setPositiveButton("OK", null)
+            .show()
     }
     
     private fun openPlayStore(packageName: String) {
