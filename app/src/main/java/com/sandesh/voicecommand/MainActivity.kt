@@ -767,35 +767,52 @@ class MainActivity : AppCompatActivity() {
     
     private fun playOnYouTube(query: String) {
         try {
+            // Try YouTube app search intent first
             val intent = Intent(Intent.ACTION_SEARCH).apply {
                 setPackage("com.google.android.youtube")
                 putExtra("query", query)
             }
-            startActivity(intent)
-            statusText.text = "✅ Playing on YouTube: $query"
-            Toast.makeText(this, "Searching YouTube for: $query", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            // Fallback to browser
-            val browserIntent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}")
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Searching YouTube: $query"
+                Toast.makeText(this, "Opening YouTube. Tap a video to play.", Toast.LENGTH_LONG).show()
+            } else {
+                // Fallback to browser
+                val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}")
+                }
+                startActivity(browserIntent)
+                statusText.text = "✅ Opening YouTube"
+                Toast.makeText(this, "YouTube app not found. Opening browser.", Toast.LENGTH_SHORT).show()
             }
-            startActivity(browserIntent)
-            statusText.text = "✅ Opening YouTube"
+        } catch (e: Exception) {
+            statusText.text = "❌ YouTube error: ${e.message}"
+            Toast.makeText(this, "Failed to open YouTube: ${e.message}", Toast.LENGTH_SHORT).show()
+            android.util.Log.e("VoiceCommand", "YouTube error", e)
         }
     }
     
     private fun playOnSpotify(query: String) {
         try {
+            // Use Spotify search URI
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("spotify:search:$query")
+                data = Uri.parse("spotify:search:${Uri.encode(query)}")
                 setPackage("com.spotify.music")
             }
-            startActivity(intent)
-            statusText.text = "✅ Playing on Spotify: $query"
-            Toast.makeText(this, "Searching Spotify for: $query", Toast.LENGTH_SHORT).show()
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Searching Spotify: $query"
+                Toast.makeText(this, "Opening Spotify. Tap a song to play.", Toast.LENGTH_LONG).show()
+            } else {
+                statusText.text = "❌ Spotify not installed"
+                Toast.makeText(this, "Please install Spotify app", Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
-            Toast.makeText(this, "Spotify not installed", Toast.LENGTH_SHORT).show()
-            statusText.text = "❌ Spotify not found"
+            statusText.text = "❌ Spotify error: ${e.message}"
+            Toast.makeText(this, "Spotify error: ${e.message}", Toast.LENGTH_SHORT).show()
+            android.util.Log.e("VoiceCommand", "Spotify error", e)
         }
     }
     
