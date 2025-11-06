@@ -1244,30 +1244,76 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             if (isSelfie) {
                 intent.putExtra("android.intent.extras.CAMERA_FACING", 1)
+                intent.putExtra("android.intent.extra.USE_FRONT_CAMERA", true)
             }
-            startActivity(intent)
-            statusText.text = if (isSelfie) "✅ Opening selfie camera" else "✅ Opening camera"
-            Toast.makeText(this, "Take your photo", Toast.LENGTH_SHORT).show()
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = if (isSelfie) "✅ Opening selfie camera" else "✅ Opening camera"
+                Toast.makeText(this, "Take your photo", Toast.LENGTH_SHORT).show()
+            } else {
+                // Fallback: Try to open camera app directly
+                val cameraIntent = Intent("android.media.action.IMAGE_CAPTURE")
+                if (cameraIntent.resolveActivity(packageManager) != null) {
+                    startActivity(cameraIntent)
+                    statusText.text = "✅ Opening camera"
+                    Toast.makeText(this, "Camera opened", Toast.LENGTH_SHORT).show()
+                } else {
+                    statusText.text = "❌ No camera app found"
+                    Toast.makeText(this, "No camera app installed", Toast.LENGTH_SHORT).show()
+                }
+            }
         } catch (e: Exception) {
-            statusText.text = "❌ Camera error"
-            Toast.makeText(this, "Failed to open camera", Toast.LENGTH_SHORT).show()
+            statusText.text = "❌ Camera error: ${e.message}"
+            Toast.makeText(this, "Failed to open camera: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "Camera error", e)
         }
     }
     
     private fun takeScreenshot() {
-        Toast.makeText(this, "Press Power + Volume Down to take screenshot", Toast.LENGTH_LONG).show()
         statusText.text = "💡 Use Power + Volume Down"
+        Toast.makeText(this, "Press Power + Volume Down to take screenshot", Toast.LENGTH_LONG).show()
     }
     
     private fun openGallery() {
         try {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                type = "image/*"
+            // Try opening Google Photos first
+            var intent = packageManager.getLaunchIntentForPackage("com.google.android.apps.photos")
+            
+            if (intent != null) {
+                startActivity(intent)
+                statusText.text = "✅ Opening Google Photos"
+                Toast.makeText(this, "Opening gallery", Toast.LENGTH_SHORT).show()
+            } else {
+                // Fallback: Try generic image viewer
+                intent = Intent(Intent.ACTION_VIEW).apply {
+                    type = "image/*"
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                
+                if (intent.resolveActivity(packageManager) != null) {
+                    startActivity(intent)
+                    statusText.text = "✅ Opening gallery"
+                    Toast.makeText(this, "Opening gallery", Toast.LENGTH_SHORT).show()
+                } else {
+                    // Try opening any gallery app
+                    intent = Intent(Intent.ACTION_PICK).apply {
+                        type = "image/*"
+                    }
+                    
+                    if (intent.resolveActivity(packageManager) != null) {
+                        startActivity(intent)
+                        statusText.text = "✅ Opening photos"
+                    } else {
+                        statusText.text = "❌ No gallery app found"
+                        Toast.makeText(this, "No gallery app installed", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
-            startActivity(intent)
-            statusText.text = "✅ Opening gallery"
         } catch (e: Exception) {
-            statusText.text = "❌ Gallery error"
+            statusText.text = "❌ Gallery error: ${e.message}"
+            Toast.makeText(this, "Failed to open gallery: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "Gallery error", e)
         }
     }
     
