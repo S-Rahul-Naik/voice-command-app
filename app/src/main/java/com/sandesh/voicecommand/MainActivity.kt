@@ -1,12 +1,19 @@
 package com.sandesh.voicecommand
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
 import android.net.Uri
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -30,6 +37,10 @@ class MainActivity : AppCompatActivity() {
     private val PERMISSION_REQUEST_CODE = 100
     private val CALL_PERMISSION_REQUEST_CODE = 101
     private var pendingCallContact: String? = null
+    
+    private lateinit var cameraManager: CameraManager
+    private var cameraId: String? = null
+    private var isFlashlightOn = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,6 +52,17 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         
         stopButton.isEnabled = false
+        
+        // Initialize camera manager for flashlight
+        try {
+            cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            cameraId = cameraManager.cameraIdList[0]
+        } catch (e: Exception) {
+            android.util.Log.e("VoiceCommand", "Camera init error", e)
+        }
+        
+        // Request all permissions at startup
+        requestAllPermissions()
         
         startButton.setOnClickListener {
             if (checkPermission()) {
@@ -61,6 +83,38 @@ class MainActivity : AppCompatActivity() {
         }
         
         initializeSpeechRecognizer()
+    }
+    
+    private fun requestAllPermissions() {
+        val permissions = mutableListOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.CAMERA,
+            Manifest.permission.ACCESS_NETWORK_STATE,
+            Manifest.permission.ACCESS_WIFI_STATE,
+            Manifest.permission.CHANGE_WIFI_STATE
+        )
+        
+        // Add Bluetooth permissions based on Android version
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            permissions.add(Manifest.permission.BLUETOOTH)
+            permissions.add(Manifest.permission.BLUETOOTH_ADMIN)
+        }
+        
+        val permissionsToRequest = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        
+        if (permissionsToRequest.isNotEmpty()) {
+            ActivityCompat.requestPermissions(
+                this,
+                permissionsToRequest.toTypedArray(),
+                PERMISSION_REQUEST_CODE
+            )
+        }
     }
     
     private fun checkPermission(): Boolean {
@@ -198,6 +252,58 @@ class MainActivity : AppCompatActivity() {
     private fun handleCommand(text: String) {
         val lowerText = text.lowercase()
         
+        // Flashlight controls
+        when {
+            lowerText.contains("turn on") && (lowerText.contains("torch") || lowerText.contains("flashlight") || lowerText.contains("flash")) -> {
+                toggleFlashlight(true)
+                return
+            }
+            lowerText.contains("turn off") && (lowerText.contains("torch") || lowerText.contains("flashlight") || lowerText.contains("flash")) -> {
+                toggleFlashlight(false)
+                return
+            }
+        }
+        
+        // WiFi controls
+        when {
+            lowerText.contains("turn on") && lowerText.contains("wifi") -> {
+                toggleWifi(true)
+                return
+            }
+            lowerText.contains("turn off") && lowerText.contains("wifi") -> {
+                toggleWifi(false)
+                return
+            }
+        }
+        
+        // Bluetooth controls
+        when {
+            lowerText.contains("turn on") && lowerText.contains("bluetooth") -> {
+                toggleBluetooth(true)
+                return
+            }
+            lowerText.contains("turn off") && lowerText.contains("bluetooth") -> {
+                toggleBluetooth(false)
+                return
+            }
+        }
+        
+        // Volume controls
+        when {
+            lowerText.contains("volume up") || lowerText.contains("increase volume") -> {
+                adjustVolume(true)
+                return
+            }
+            lowerText.contains("volume down") || lowerText.contains("decrease volume") -> {
+                adjustVolume(false)
+                return
+            }
+            lowerText.contains("mute") -> {
+                muteVolume()
+                return
+            }
+        }
+        
         // Pattern: "open <app>"
         if (lowerText.startsWith("open ")) {
             val appName = lowerText.removePrefix("open ").trim()
@@ -205,10 +311,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        // Pattern: "play <song>"
+        // Pattern: "play <song> on youtube/spotify"
         if (lowerText.startsWith("play ")) {
-            val query = lowerText.removePrefix("play ").trim()
-            openYouTubeSearch(query)
+            val remainder = lowerText.removePrefix("play ").trim()
+            when {
+                remainder.contains(" on youtube") -> {
+                    val query = remainder.replace(" on youtube", "").trim()
+                    playOnYouTube(query)
+                }
+                remainder.contains(" on spotify") -> {
+                    val query = remainder.replace(" on spotify", "").trim()
+                    playOnSpotify(query)
+                }
+                else -> {
+                    // Default to YouTube
+                    playOnYouTube(remainder)
+                }
+            }
             return
         }
         
@@ -216,6 +335,34 @@ class MainActivity : AppCompatActivity() {
         if (lowerText.startsWith("call ")) {
             val contact = lowerText.removePrefix("call ").trim()
             openDialer(contact)
+            return
+        }
+        
+        // Pattern: "search for <query>" or "search <query>"
+        if (lowerText.startsWith("search for ")) {
+            val query = lowerText.removePrefix("search for ").trim()
+            searchGoogle(query)
+            return
+        }
+        
+        if (lowerText.startsWith("search ")) {
+            val query = lowerText.removePrefix("search ").trim()
+            searchGoogle(query)
+            return
+        }
+        
+        // Pattern: "whatsapp <contact> <message>"
+        if (lowerText.startsWith("whatsapp ")) {
+            val remainder = lowerText.removePrefix("whatsapp ").trim()
+            val parts = remainder.split(" ", limit = 2)
+            if (parts.size >= 2) {
+                val contact = parts[0]
+                val message = parts[1]
+                sendWhatsAppMessage(contact, message)
+            } else {
+                statusText.text = "❌ Say: whatsapp [name] [message]"
+                Toast.makeText(this, "Format: whatsapp [contact name] [message]", Toast.LENGTH_LONG).show()
+            }
             return
         }
         
@@ -353,19 +500,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun openYouTubeSearch(query: String) {
-        try {
-            val intent = Intent(Intent.ACTION_SEARCH).apply {
-                setPackage("com.google.android.youtube")
-                putExtra("query", query)
-            }
-            startActivity(intent)
-            statusText.text = "✅ Searching YouTube: $query"
-        } catch (e: Exception) {
-            statusText.text = "❌ YouTube not installed"
-        }
-    }
-    
     private fun openDialer(contact: String) {
         // Check if we have the necessary permissions
         val hasCallPermission = ContextCompat.checkSelfPermission(
@@ -450,6 +584,202 @@ class MainActivity : AppCompatActivity() {
         }
         
         return phoneNumber
+    }
+    
+    private fun searchGoogle(query: String) {
+        try {
+            val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                putExtra(android.app.SearchManager.QUERY, query)
+            }
+            startActivity(intent)
+            statusText.text = "✅ Searching for: $query"
+            Toast.makeText(this, "Searching Google for: $query", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            // Fallback to browser
+            try {
+                val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("https://www.google.com/search?q=${Uri.encode(query)}")
+                }
+                startActivity(browserIntent)
+                statusText.text = "✅ Searching for: $query"
+            } catch (e2: Exception) {
+                statusText.text = "❌ Search failed"
+                Toast.makeText(this, "Failed to search: ${e2.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun playOnYouTube(query: String) {
+        try {
+            val intent = Intent(Intent.ACTION_SEARCH).apply {
+                setPackage("com.google.android.youtube")
+                putExtra("query", query)
+            }
+            startActivity(intent)
+            statusText.text = "✅ Playing on YouTube: $query"
+            Toast.makeText(this, "Searching YouTube for: $query", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            // Fallback to browser
+            val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}")
+            }
+            startActivity(browserIntent)
+            statusText.text = "✅ Opening YouTube"
+        }
+    }
+    
+    private fun playOnSpotify(query: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("spotify:search:$query")
+                setPackage("com.spotify.music")
+            }
+            startActivity(intent)
+            statusText.text = "✅ Playing on Spotify: $query"
+            Toast.makeText(this, "Searching Spotify for: $query", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Spotify not installed", Toast.LENGTH_SHORT).show()
+            statusText.text = "❌ Spotify not found"
+        }
+    }
+    
+    private fun toggleFlashlight(turnOn: Boolean) {
+        try {
+            if (!::cameraManager.isInitialized) {
+                cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                cameraId = cameraManager.cameraIdList[0]
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                cameraManager.setTorchMode(cameraId!!, turnOn)
+                isFlashlightOn = turnOn
+                statusText.text = if (turnOn) "✅ Flashlight ON" else "✅ Flashlight OFF"
+                Toast.makeText(this, if (turnOn) "Flashlight turned ON" else "Flashlight turned OFF", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            statusText.text = "❌ Flashlight error"
+            Toast.makeText(this, "Failed to toggle flashlight: ${e.message}", Toast.LENGTH_SHORT).show()
+            android.util.Log.e("VoiceCommand", "Flashlight error", e)
+        }
+    }
+    
+    private fun toggleWifi(turnOn: Boolean) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Android 10+ - open WiFi settings
+                val panelIntent = Intent(Settings.Panel.ACTION_WIFI)
+                startActivity(panelIntent)
+                statusText.text = "Opening WiFi settings"
+                Toast.makeText(this, "Please toggle WiFi manually", Toast.LENGTH_LONG).show()
+            } else {
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                wifiManager.isWifiEnabled = turnOn
+                statusText.text = if (turnOn) "✅ WiFi ON" else "✅ WiFi OFF"
+                Toast.makeText(this, if (turnOn) "WiFi turned ON" else "WiFi turned OFF", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            statusText.text = "❌ WiFi error"
+            Toast.makeText(this, "Failed to toggle WiFi: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun toggleBluetooth(turnOn: Boolean) {
+        try {
+            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+            if (bluetoothAdapter == null) {
+                Toast.makeText(this, "Bluetooth not supported", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Android 12+ - open Bluetooth settings
+                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                startActivity(intent)
+                statusText.text = "Opening Bluetooth settings"
+                Toast.makeText(this, "Please toggle Bluetooth manually", Toast.LENGTH_LONG).show()
+            } else {
+                if (turnOn && !bluetoothAdapter.isEnabled) {
+                    bluetoothAdapter.enable()
+                } else if (!turnOn && bluetoothAdapter.isEnabled) {
+                    bluetoothAdapter.disable()
+                }
+                statusText.text = if (turnOn) "✅ Bluetooth ON" else "✅ Bluetooth OFF"
+                Toast.makeText(this, if (turnOn) "Bluetooth turned ON" else "Bluetooth turned OFF", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            statusText.text = "❌ Bluetooth error"
+            Toast.makeText(this, "Failed to toggle Bluetooth: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun adjustVolume(increase: Boolean) {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (increase) {
+                audioManager.adjustStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.ADJUST_RAISE,
+                    AudioManager.FLAG_SHOW_UI
+                )
+                statusText.text = "✅ Volume increased"
+            } else {
+                audioManager.adjustStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.ADJUST_LOWER,
+                    AudioManager.FLAG_SHOW_UI
+                )
+                statusText.text = "✅ Volume decreased"
+            }
+            Toast.makeText(this, if (increase) "Volume up" else "Volume down", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Volume error"
+            Toast.makeText(this, "Failed to adjust volume", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun muteVolume() {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.adjustStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                AudioManager.ADJUST_MUTE,
+                AudioManager.FLAG_SHOW_UI
+            )
+            statusText.text = "✅ Muted"
+            Toast.makeText(this, "Volume muted", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            statusText.text = "❌ Mute error"
+            Toast.makeText(this, "Failed to mute", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun sendWhatsAppMessage(contactName: String, message: String) {
+        try {
+            // Find contact phone number
+            val phoneNumber = findContactPhoneNumber(contactName)
+            
+            if (phoneNumber != null) {
+                // Clean phone number (remove spaces, dashes, etc.)
+                val cleanNumber = phoneNumber.replace(Regex("[^0-9+]"), "")
+                
+                // Open WhatsApp with pre-filled message
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}")
+                    setPackage("com.whatsapp")
+                }
+                
+                startActivity(intent)
+                statusText.text = "✅ Opening WhatsApp for $contactName"
+                Toast.makeText(this, "Sending to $contactName: $message", Toast.LENGTH_SHORT).show()
+            } else {
+                statusText.text = "❌ Contact $contactName not found"
+                Toast.makeText(this, "Contact not found: $contactName", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            statusText.text = "❌ WhatsApp failed"
+            Toast.makeText(this, "WhatsApp error: ${e.message}\nMake sure WhatsApp is installed", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "WhatsApp error", e)
+        }
     }
     
     private fun getErrorText(error: Int): String {
