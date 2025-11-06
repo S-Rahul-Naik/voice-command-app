@@ -936,43 +936,145 @@ class MainActivity : AppCompatActivity() {
     
     private fun setAlarm(command: String) {
         try {
+            // Parse time from command (e.g., "set alarm for 7 AM" or "set alarm for 7:30 PM")
             val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
                 putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                
+                // Try to parse hours
+                val hourMatch = Regex("""(\d{1,2})\s*(?::|am|pm|a\.m\.|p\.m\.)""", RegexOption.IGNORE_CASE).find(command)
+                if (hourMatch != null) {
+                    var hour = hourMatch.groupValues[1].toIntOrNull() ?: 0
+                    
+                    // Check for PM
+                    if (command.contains("pm", ignoreCase = true) && hour < 12) {
+                        hour += 12
+                    } else if (command.contains("am", ignoreCase = true) && hour == 12) {
+                        hour = 0
+                    }
+                    
+                    putExtra(AlarmClock.EXTRA_HOUR, hour)
+                    
+                    // Try to parse minutes
+                    val minuteMatch = Regex(""":\s*(\d{1,2})""").find(command)
+                    if (minuteMatch != null) {
+                        val minute = minuteMatch.groupValues[1].toIntOrNull() ?: 0
+                        putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                    } else {
+                        putExtra(AlarmClock.EXTRA_MINUTES, 0)
+                    }
+                }
             }
-            startActivity(intent)
-            statusText.text = "✅ Opening alarms"
-            Toast.makeText(this, "Set your alarm", Toast.LENGTH_SHORT).show()
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Opening alarm app"
+                Toast.makeText(this, "Setting alarm...", Toast.LENGTH_SHORT).show()
+            } else {
+                // Fallback: open clock app
+                val clockIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS)
+                if (clockIntent.resolveActivity(packageManager) != null) {
+                    startActivity(clockIntent)
+                    statusText.text = "✅ Opening clock app"
+                    Toast.makeText(this, "Please set alarm manually", Toast.LENGTH_SHORT).show()
+                } else {
+                    statusText.text = "❌ No alarm app found"
+                    Toast.makeText(this, "No clock app installed", Toast.LENGTH_SHORT).show()
+                }
+            }
         } catch (e: Exception) {
-            statusText.text = "❌ Alarm error"
-            Toast.makeText(this, "Failed to open alarm", Toast.LENGTH_SHORT).show()
+            statusText.text = "❌ Alarm error: ${e.message}"
+            Toast.makeText(this, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
     
     private fun setTimer(command: String) {
         try {
+            // Parse duration from command (e.g., "set timer for 5 minutes" or "set timer for 2 hours")
             val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
                 putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                
+                // Try to parse time duration
+                when {
+                    command.contains("second", ignoreCase = true) -> {
+                        val seconds = Regex("""(\d+)\s*second""", RegexOption.IGNORE_CASE).find(command)?.groupValues?.get(1)?.toIntOrNull()
+                        if (seconds != null) {
+                            putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                        }
+                    }
+                    command.contains("minute", ignoreCase = true) -> {
+                        val minutes = Regex("""(\d+)\s*minute""", RegexOption.IGNORE_CASE).find(command)?.groupValues?.get(1)?.toIntOrNull()
+                        if (minutes != null) {
+                            putExtra(AlarmClock.EXTRA_LENGTH, minutes * 60)
+                        }
+                    }
+                    command.contains("hour", ignoreCase = true) -> {
+                        val hours = Regex("""(\d+)\s*hour""", RegexOption.IGNORE_CASE).find(command)?.groupValues?.get(1)?.toIntOrNull()
+                        if (hours != null) {
+                            putExtra(AlarmClock.EXTRA_LENGTH, hours * 3600)
+                        }
+                    }
+                }
             }
-            startActivity(intent)
-            statusText.text = "✅ Opening timer"
-            Toast.makeText(this, "Set your timer", Toast.LENGTH_SHORT).show()
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Opening timer"
+                Toast.makeText(this, "Setting timer...", Toast.LENGTH_SHORT).show()
+            } else {
+                // Fallback: open clock app
+                val clockIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS)
+                if (clockIntent.resolveActivity(packageManager) != null) {
+                    startActivity(clockIntent)
+                    statusText.text = "✅ Opening clock app"
+                    Toast.makeText(this, "Please set timer manually", Toast.LENGTH_SHORT).show()
+                } else {
+                    statusText.text = "❌ No clock app found"
+                    Toast.makeText(this, "No clock app installed", Toast.LENGTH_SHORT).show()
+                }
+            }
         } catch (e: Exception) {
-            statusText.text = "❌ Timer error"
-            Toast.makeText(this, "Failed to open timer", Toast.LENGTH_SHORT).show()
+            statusText.text = "❌ Timer error: ${e.message}"
+            Toast.makeText(this, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
     
     private fun setReminder(command: String) {
         try {
+            // For reminders, we'll use Calendar intent as it's more reliable
             val intent = Intent(Intent.ACTION_INSERT).apply {
                 data = CalendarContract.Events.CONTENT_URI
+                
+                // Extract reminder text
+                val reminderText = when {
+                    command.contains("remind me to ", ignoreCase = true) -> 
+                        command.substringAfter("remind me to ", "").trim()
+                    command.contains("set reminder ", ignoreCase = true) -> 
+                        command.substringAfter("set reminder ", "").trim()
+                    command.contains("set a reminder ", ignoreCase = true) -> 
+                        command.substringAfter("set a reminder ", "").trim()
+                    else -> command
+                }
+                
+                putExtra(CalendarContract.Events.TITLE, "Reminder: $reminderText")
+                putExtra(CalendarContract.Events.DESCRIPTION, reminderText)
+                
+                // Set to 1 hour from now by default
+                val startTime = System.currentTimeMillis() + (60 * 60 * 1000)
+                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startTime)
+                putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startTime + (30 * 60 * 1000))
             }
-            startActivity(intent)
-            statusText.text = "✅ Creating reminder"
-            Toast.makeText(this, "Add your reminder", Toast.LENGTH_SHORT).show()
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Creating reminder"
+                Toast.makeText(this, "Setting reminder...", Toast.LENGTH_SHORT).show()
+            } else {
+                statusText.text = "❌ No calendar app found"
+                Toast.makeText(this, "No calendar app installed", Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
-            statusText.text = "❌ Reminder error"
-            Toast.makeText(this, "Failed to create reminder", Toast.LENGTH_SHORT).show()
+            statusText.text = "❌ Reminder error: ${e.message}"
+            Toast.makeText(this, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
     
@@ -980,13 +1082,37 @@ class MainActivity : AppCompatActivity() {
         try {
             val intent = Intent(Intent.ACTION_INSERT).apply {
                 data = CalendarContract.Events.CONTENT_URI
+                
+                // Extract event title
+                val title = when {
+                    command.contains("add ") && command.contains(" to calendar") -> 
+                        command.substringAfter("add ").substringBefore(" to calendar").trim()
+                    command.contains("add ") && command.contains(" to my calendar") -> 
+                        command.substringAfter("add ").substringBefore(" to my calendar").trim()
+                    command.contains("create event ") -> 
+                        command.substringAfter("create event ").trim()
+                    else -> command
+                }
+                
+                putExtra(CalendarContract.Events.TITLE, title)
+                
+                // Set to current time by default
+                val startTime = System.currentTimeMillis()
+                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startTime)
+                putExtra(CalendarContract.EXTRA_EVENT_END_TIME, startTime + (60 * 60 * 1000)) // 1 hour duration
             }
-            startActivity(intent)
-            statusText.text = "✅ Adding to calendar"
-            Toast.makeText(this, "Add your event", Toast.LENGTH_SHORT).show()
+            
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                statusText.text = "✅ Adding calendar event"
+                Toast.makeText(this, "Creating event...", Toast.LENGTH_SHORT).show()
+            } else {
+                statusText.text = "❌ No calendar app found"
+                Toast.makeText(this, "No calendar app installed", Toast.LENGTH_SHORT).show()
+            }
         } catch (e: Exception) {
-            statusText.text = "❌ Calendar error"
-            Toast.makeText(this, "Failed to open calendar", Toast.LENGTH_SHORT).show()
+            statusText.text = "❌ Calendar error: ${e.message}"
+            Toast.makeText(this, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
     
