@@ -506,8 +506,6 @@ class MainActivity : AppCompatActivity() {
             calculatePercentage(lowerText)
             return
         }
-            return
-        }
         
         statusText.text = "✅ Recognized: $text"
     }
