@@ -297,24 +297,30 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun showInstalledApps() {
-        val apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-            .filter { 
-                val packageName = it.packageName
-                packageName.contains("youtube", ignoreCase = true) ||
-                packageName.contains("whatsapp", ignoreCase = true) ||
-                packageName.contains("instagram", ignoreCase = true) ||
-                packageName.contains("chrome", ignoreCase = true) ||
-                packageName.contains("gmail", ignoreCase = true) ||
-                packageName.contains("maps", ignoreCase = true)
-            }
-            .map { "${it.loadLabel(packageManager)}\n${it.packageName}" }
-            .joinToString("\n\n")
-        
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Installed Apps (Debug)")
-            .setMessage(if (apps.isEmpty()) "No matching apps found" else apps)
-            .setPositiveButton("OK", null)
-            .show()
+        try {
+            // Get all apps with launcher activities
+            val intent = Intent(Intent.ACTION_MAIN, null)
+            intent.addCategory(Intent.CATEGORY_LAUNCHER)
+            val allApps = packageManager.queryIntentActivities(intent, 0)
+            
+            // Sort and format the list
+            val appList = allApps
+                .map { appInfo ->
+                    val label = appInfo.loadLabel(packageManager).toString()
+                    val packageName = appInfo.activityInfo.packageName
+                    "$label\n($packageName)"
+                }
+                .sorted()
+                .joinToString("\n\n")
+            
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("All Launchable Apps (${allApps.size} apps)")
+                .setMessage(appList)
+                .setPositiveButton("OK", null)
+                .show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
     
     private fun openPlayStore(packageName: String) {
