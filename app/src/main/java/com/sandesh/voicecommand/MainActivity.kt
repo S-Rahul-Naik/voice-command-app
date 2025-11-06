@@ -3,7 +3,10 @@ package com.sandesh.voicecommand
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.Cursor
+import android.net.Uri
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -25,6 +28,8 @@ class MainActivity : AppCompatActivity() {
     private var isListening = false
     
     private val PERMISSION_REQUEST_CODE = 100
+    private val CALL_PERMISSION_REQUEST_CODE = 101
+    private var pendingCallContact: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,11 +84,21 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startListening()
-            } else {
-                Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show()
+        when (requestCode) {
+            PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    startListening()
+                } else {
+                    Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show()
+                }
+            }
+            CALL_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    pendingCallContact?.let { makeDirectCall(it) }
+                    pendingCallContact = null
+                } else {
+                    Toast.makeText(this, "Call permission required to make calls", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -352,11 +367,89 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun openDialer(contact: String) {
-        val intent = Intent(Intent.ACTION_DIAL).apply {
-            data = android.net.Uri.parse("tel:")
+        // Check if we have the necessary permissions
+        val hasCallPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CALL_PHONE
+        ) == PackageManager.PERMISSION_GRANTED
+        
+        val hasContactsPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_CONTACTS
+        ) == PackageManager.PERMISSION_GRANTED
+        
+        if (!hasCallPermission || !hasContactsPermission) {
+            // Request permissions
+            pendingCallContact = contact
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_CONTACTS),
+                CALL_PERMISSION_REQUEST_CODE
+            )
+            return
         }
-        startActivity(intent)
-        statusText.text = "✅ Opening dialer"
+        
+        makeDirectCall(contact)
+    }
+    
+    private fun makeDirectCall(contactName: String) {
+        try {
+            // Search for the contact in the phonebook
+            val phoneNumber = findContactPhoneNumber(contactName)
+            
+            if (phoneNumber != null) {
+                // Make direct call
+                val intent = Intent(Intent.ACTION_CALL).apply {
+                    data = Uri.parse("tel:$phoneNumber")
+                }
+                startActivity(intent)
+                statusText.text = "✅ Calling $contactName"
+                Toast.makeText(this, "Calling $contactName at $phoneNumber", Toast.LENGTH_SHORT).show()
+            } else {
+                // Contact not found
+                statusText.text = "❌ Contact $contactName not found"
+                Toast.makeText(this, "No contact found with name: $contactName", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            statusText.text = "❌ Call failed"
+            Toast.makeText(this, "Failed to make call: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("VoiceCommand", "Call error", e)
+        }
+    }
+    
+    private fun findContactPhoneNumber(contactName: String): String? {
+        var phoneNumber: String? = null
+        val searchName = contactName.lowercase()
+        
+        val cursor: Cursor? = contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            null,
+            null,
+            null
+        )
+        
+        cursor?.use {
+            while (it.moveToNext()) {
+                val name = it.getString(
+                    it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                ).lowercase()
+                
+                // Check if the contact name matches
+                if (name.contains(searchName) || searchName.contains(name)) {
+                    phoneNumber = it.getString(
+                        it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    )
+                    android.util.Log.d("VoiceCommand", "Found contact: $name -> $phoneNumber")
+                    return phoneNumber // Return the first match
+                }
+            }
+        }
+        
+        return phoneNumber
     }
     
     private fun getErrorText(error: Int): String {
