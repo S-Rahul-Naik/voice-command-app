@@ -415,8 +415,19 @@ class MainActivity : AppCompatActivity() {
         }
         
         // Pattern: "send a text to <contact> <message>" or "text <contact> <message>"
-        if (lowerText.startsWith("send a text to ") || lowerText.startsWith("send text to ")) {
-            val remainder = lowerText.removePrefix("send a text to ").removePrefix("send text to ").trim()
+        if (lowerText.startsWith("send a text to ")) {
+            val remainder = lowerText.removePrefix("send a text to ").trim()
+            val parts = remainder.split(" ", limit = 2)
+            if (parts.size >= 2) {
+                val contact = parts[0]
+                val message = parts[1]
+                sendSMS(contact, message)
+            }
+            return
+        }
+        
+        if (lowerText.startsWith("send text to ")) {
+            val remainder = lowerText.removePrefix("send text to ").trim()
             val parts = remainder.split(" ", limit = 2)
             if (parts.size >= 2) {
                 val contact = parts[0]
